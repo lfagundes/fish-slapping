@@ -3,7 +3,6 @@
 import xmpp, time, os, subprocess, datetime, fudge
 
 ERROR_TIMEOUT = 3660
-VIDEO_TIMEOUT = 1800
 
 def get_logger(name):
     return fudge.Fake('logger', callable=True).returns_fake().is_a_stub()
@@ -106,8 +105,7 @@ class Log(object):
             line = self.log.readline()
             self.log.seek(position)
             try:
-                strtime = line.split(' - ')[0].split(',')[0]
-                tstamp = datetime.datetime.strptime(strtime, '%Y-%m-%d %H:%M:%S')
+                tstamp = self.get_tstamp(line)
             except ValueError:
                 # This might be a multi-lined log entry
                 # We must not advance counter and time and keep rewinding
@@ -122,13 +120,19 @@ class Log(object):
             if len(non_log_lines) > 1:
                 for i in range(0, non_log_lines[-2]):
                     self.log.readline()
-            
+
+    def get_tstamp(self, line):
+        strtime = line.split(' - ')[0].split(',')[0]
+        return datetime.datetime.strptime(strtime, '%Y-%m-%d %H:%M:%S')
 
 class Status(object):
-    def __init__(self, dtime, msg):
-        self.time = dtime.split(',')[0]
+    def __init__(self, tstamp, msg):
         self.message = msg
-        self.tstamp = datetime.datetime.strptime(self.time, '%Y-%m-%d %H:%M:%S')
+        self.tstamp = tstamp
+
+    @property
+    def time(self):
+        return self.tstamp.strftime("%Y-%m-%d %H:%M:%S")
 
 class Error(Status):
     @property
@@ -166,15 +170,20 @@ class LogEventHandler(Log):
         lines = lines.split('\n')
         
         for line in lines:
-            if not line:
+            if line.isspace():
                 continue
-            dtime, name, msgtype, msg = line.split(' - ')
+            tstamp, msgtype, msg = self.parse_line(line)
             if msgtype == 'ERROR':
-                self._error = Error(dtime, msg)
+                self._error = Error(tstamp, msg)
             elif msgtype == 'INFO':
-                self.status = Status(dtime, msg)
+                self.status = Status(tstamp, msg)
 
         return message
+
+    def parse_line(self, line):
+        dtime, name, msgtype, msg = line.split(' - ')
+        tstamp = datetime.datetime.strptime(dtime.split(',')[0], '%Y-%m-%d %H:%M:%S')
+        return tstamp, msgtype, msg
 
 class StreamSession():
     def __init__(self, jid, timeout = None, condition = None):
@@ -364,16 +373,8 @@ class Bot(object):
     def set_state(self):
         self.status_show = None
 
-        try:
-            self.status_msg = '%s %s' % (self.logs['video'].status.time,
-                                         self.logs['video'].status.message.split()[-1])
-
-            if (datetime.datetime.now() - self.logs['video'].status.tstamp).seconds > VIDEO_TIMEOUT:
-                self.status_show = 'away'
-        except AttributeError:
-            self.status_msg = ''
-            self.status_show = 'away'
-            
+        self.status_msg = '%s %s' % (self.main_log.status.time,
+                                     self.main_log.status.message.split()[-1])
         
         tstamp = None
         for name, log in self.logs.items():
