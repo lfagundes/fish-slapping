@@ -10,16 +10,38 @@ def get_logger(name):
 class Finish(Exception):
     pass
 
-class Log(object):
-    log_pattern = '/var/log/totomote/totomote-%s.log'
+class Status(object):
+    def __init__(self, tstamp, msg):
+        self.message = msg
+        self.tstamp = tstamp
 
-    def __init__(self, log_name):
-        self.name = log_name
+    @property
+    def time(self):
+        return self.tstamp.strftime("%Y-%m-%d %H:%M:%S")
+
+class Error(Status):
+    @property
+    def expired(self):
+        return (datetime.datetime.now() - self.tstamp).seconds > ERROR_TIMEOUT
+
+
+class Log(object):
+
+    def __init__(self, logfile, name=None):
+        if name is None:
+            self.name = os.path.basename(logfile)
+        else:
+            self.name = name
         self.buffer = ''
         self.log = None
 
-        self.logfile = self.log_pattern % self.name
+        self.logfile = logfile
         self.openfile(start=True)
+        self.status = None
+        self._error = None
+        self.rewind(dtime=ERROR_TIMEOUT)
+        self.flush()
+
 
     @property
     def real_size(self):
@@ -51,22 +73,7 @@ class Log(object):
                 self.log.seek(self.real_size)
         except OSError:
             raise Exception("Log inexistente")
-
-    def flush(self):
-        if not self.log or self.pointer > self.real_size:
-            self.openfile()
-
-        new_bytes = self.real_size - self.pointer
-
-        if not new_bytes:
-            return ''
         
-        self.buffer += self.log.read(new_bytes)
-        message, br, buf = self.buffer.rpartition('\n')
-        self.buffer = buf
-
-        return message
-
     def _char_at(self, pos):
         self.log.seek(pos)
         return self.log.read(1)
@@ -105,7 +112,7 @@ class Log(object):
             line = self.log.readline()
             self.log.seek(position)
             try:
-                tstamp = self.get_tstamp(line)
+                tstamp = self.parse_line(line)[0]
             except ValueError:
                 # This might be a multi-lined log entry
                 # We must not advance counter and time and keep rewinding
@@ -121,35 +128,6 @@ class Log(object):
                 for i in range(0, non_log_lines[-2]):
                     self.log.readline()
 
-    def get_tstamp(self, line):
-        strtime = line.split(' - ')[0].split(',')[0]
-        return datetime.datetime.strptime(strtime, '%Y-%m-%d %H:%M:%S')
-
-class Status(object):
-    def __init__(self, tstamp, msg):
-        self.message = msg
-        self.tstamp = tstamp
-
-    @property
-    def time(self):
-        return self.tstamp.strftime("%Y-%m-%d %H:%M:%S")
-
-class Error(Status):
-    @property
-    def expired(self):
-        return (datetime.datetime.now() - self.tstamp).seconds > ERROR_TIMEOUT
-
-class LogEventHandler(Log):
-
-    def __init__(self, log_name):
-        super(self.__class__, self).__init__(log_name)
-        self.status = None
-        self._error = None
-
-        self.rewind(dtime=ERROR_TIMEOUT)
-
-        self.flush()
-
     @property
     def error(self):
         if self._error is None:
@@ -160,7 +138,17 @@ class LogEventHandler(Log):
         return self._error
 
     def flush(self):
-        message = super(self.__class__, self).flush()
+        if not self.log or self.pointer > self.real_size:
+            self.openfile()
+
+        new_bytes = self.real_size - self.pointer
+
+        if not new_bytes:
+            return ''
+        
+        self.buffer += self.log.read(new_bytes)
+        message, br, buf = self.buffer.rpartition('\n')
+        self.buffer = buf
 
         lines = message.strip()
 
@@ -172,7 +160,12 @@ class LogEventHandler(Log):
         for line in lines:
             if line.isspace():
                 continue
-            tstamp, msgtype, msg = self.parse_line(line)
+            try:
+                tstamp, msgtype, msg = self.parse_line(line)
+            except ValueError:
+                # TODO: unify
+                # This might be a multi-lined log entry
+                continue
             if msgtype == 'ERROR':
                 self._error = Error(tstamp, msg)
             elif msgtype == 'INFO':
@@ -247,21 +240,22 @@ class JabberStatus(object):
         
 class Bot(object):
 
+    LOGS = None
+    STATUSES = None
+
     def __init__(self, jid, password):
         self.logger = get_logger("server_bot")
-        # TODO
-        # self.netlogger = TotoNetLogger('jabber')
         self.logs = {}
         self.sessions = {}
 
         self.jid = jid
         self.password = password
         
-        for log in LOGS:
-            self.logs[log] = LogEventHandler(log)
-            self.sessions[log] = StreamSessionManager()
+        for log in self.LOGS:
+            self.logs[log.name] = log
+            self.sessions[log.name] = StreamSessionManager()
         
-        self.status_msg = ''
+        self.status_msg = 'Server Bot'
         self.status_show = None
 
         self.last_presence = None
@@ -280,6 +274,15 @@ class Bot(object):
         time.sleep(60) #evita reconexao rápida
         raise Finish
 
+    @property
+    def host(self):
+        return self.jid.split("@")[1]
+    
+    @property
+    def username(self):
+        return self.jid.split("@")[0]
+
+
     def connect(self):
         self.client =  xmpp.Client(self.host)
         result = self.client.connect()
@@ -290,7 +293,7 @@ class Bot(object):
             self.logger.warn("Couldn't connect")
             self.finish()
 
-        auth = self.client.auth(self.serial, self.password, self.serial)
+        auth = self.client.auth(self.username, self.password)
 
         if auth:
             self.logger.info("Authenticated")
@@ -314,7 +317,6 @@ class Bot(object):
         self.connect()
 
     def run(self):
-        become_user_totomote()
         while True:
             self.cycle()
 
@@ -373,8 +375,8 @@ class Bot(object):
     def set_state(self):
         self.status_show = None
 
-        self.status_msg = '%s %s' % (self.main_log.status.time,
-                                     self.main_log.status.message.split()[-1])
+        self.status_msg = '%s %s' % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                     self.status.get_status())
         
         tstamp = None
         for name, log in self.logs.items():

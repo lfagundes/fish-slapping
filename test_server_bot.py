@@ -4,18 +4,15 @@ import os, time, fudge, datetime
 from unittest import TestCase
 
 import server_bot
-from server_bot import Log, LogEventHandler, StreamSessionManager, Bot
+from server_bot import Log, StreamSessionManager, Bot
 
 class BaseTest(TestCase):
 
-    log_pattern = '/tmp/jabber_test/%s.log'
-    
     def _rmdir(self):
         os.system('rm -rf /tmp/jabber_test/')
 
     def setUp(self):
         self.patch = None
-        Log.log_pattern = self.log_pattern
         self._rmdir()
         os.mkdir('/tmp/jabber_test')
         fake_sleep = fudge.Fake('sleep', callable=True).returns(None)
@@ -33,7 +30,6 @@ class BaseTest(TestCase):
         if self.patch:
             self.patch.restore()
         self.patch = fudge.patch_object(datetime.datetime, 'now', fake)
-
     
 class LogTest(BaseTest):
 
@@ -41,7 +37,7 @@ class LogTest(BaseTest):
         filename = '/tmp/jabber_test/empty.log'
         assert not os.path.exists(filename)
 
-        log = Log('empty')
+        log = Log(filename)
 
         self.assertEquals(log.flush(), '')
         self.assertEquals(log.flush(), '')
@@ -61,7 +57,7 @@ class LogTest(BaseTest):
     def test_log_will_be_reopened_if_rotated(self):
         filename = '/tmp/jabber_test/basic.log'
 
-        log = Log('basic')
+        log = Log(filename)
 
         content = ('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n' +
                    '2011-09-21 02:00:01,854 - basic - INFO - Line 02\n' +
@@ -81,7 +77,7 @@ class LogTest(BaseTest):
 
     def test_log_can_be_rewinded_by_line_number(self):
         filename = '/tmp/jabber_test/basic.log'
-        log = Log('basic')
+        log = Log(filename)
 
         content = ('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n' +
                    '2011-09-21 02:00:01,854 - basic - INFO - Line 02\n' +
@@ -127,7 +123,7 @@ class LogTest(BaseTest):
         self.set_date('2011-09-21 10:00:05')
 
         filename = '/tmp/jabber_test/basic.log'
-        log = Log('basic')
+        log = Log(filename)
 
         content = ('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n' +
                    '2011-09-21 02:00:01,854 - basic - INFO - Line 02\n' +
@@ -169,7 +165,7 @@ class LogTest(BaseTest):
         self.set_date('2011-09-21 10:00:05')
 
         filename = '/tmp/jabber_test/basic.log'
-        log = Log('basic')
+        log = Log(filename)
 
         content = ('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n' +
                    '2011-09-21 02:00:01,854 - basic - INFO - Line 02\n' +
@@ -220,7 +216,7 @@ class LogTest(BaseTest):
 
     def test_rewind_by_lines_tolerates_multi_line_logs(self):
         filename = '/tmp/jabber_test/basic.log'
-        log = Log('basic')
+        log = Log(filename)
 
         content = ('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n' +
                    '2011-09-21 02:00:01,854 - basic - INFO - Line 02\n' +
@@ -269,20 +265,18 @@ class LogTest(BaseTest):
                           '2011-09-21 11:00:01,854 - basic - INFO - Line 11')
 
 
-class LogEventHandlerTest(BaseTest):
-
     def test_empty_log_will_have_clean_status(self):
         filename = '/tmp/jabber_test/empty.log'
         assert not os.path.exists(filename)
 
-        log = LogEventHandler('empty')
+        log = Log(filename)
 
         self.assertTrue(not log.error)
 
     def test_error_messages_will_set_error_status(self):
         filename = '/tmp/jabber_test/basic.log'
 
-        log = LogEventHandler('basic')
+        log = Log(filename)
 
         open(filename, 'w').write('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n')
         self.set_date('2011-09-21 01:00:02')
@@ -317,7 +311,7 @@ class LogEventHandlerTest(BaseTest):
         self.set_date('2011-09-21 01:00:03')
         open(filename, 'w').write('2011-09-21 01:00:02,854 - basic - ERROR - Some error message\n')
 
-        log = LogEventHandler('basic')
+        log = Log(filename)
 
         self.assertTrue(log.error)
         self.assertEquals(log.error.time, '2011-09-21 01:00:02')
@@ -340,7 +334,7 @@ class LogEventHandlerTest(BaseTest):
                                   '2011-09-21 01:00:05,854 - basic - INFO - Line 05\n'
                                   )
 
-        log = LogEventHandler('basic')
+        log = Log(filename)
 
         self.assertTrue(log.error)
         self.assertEquals(log.error.time, '2011-09-21 01:00:04')
@@ -359,7 +353,7 @@ class LogEventHandlerTest(BaseTest):
                                   '2011-09-21 01:00:05,854 - basic - INFO - Line 05\n'
                                   )
 
-        log = LogEventHandler('basic')
+        log = Log(filename)
 
         self.assertTrue(not log.error)
 
@@ -368,7 +362,7 @@ class LogEventHandlerTest(BaseTest):
 
         server_bot.ERROR_TIMEOUT = 120
 
-        log = LogEventHandler('basic')
+        log = Log(filename)
 
         self.assertTrue(not log.status)
 
@@ -543,277 +537,6 @@ class StreamSessionManagerTest(BaseTest):
         self.assertTrue('test3@domain.com' not in session.receivers)
 
 
-class BotTest(BaseTest):
-
-    def setUp(self):
-        super(BotTest, self).setUp()
-
-        self.connect_patch = None
-
-    def patch_connection(self):
-        fake_connect = fudge.Fake('connect', callable=True).returns(True)
-        self.connect_patch = fudge.patch_object(Bot, 'connect', fake_connect)
-        
-    def tearDown(self):
-        super(BotTest, self).tearDown()
-        if self.connect_patch:
-            self.connect_patch.restore()
-
-    def test_status_is_properly_set(self):
-        self.patch_connection()
-
-        server_bot.ERROR_TIMEOUT = 60
-        server_bot.LOGS = ('video', 'first', 'secnd')
-
-        bot = Bot("","")
-        bot.client = fudge.Fake('client').is_a_stub()
-        
-        filevideo = '/tmp/jabber_test/video.log'
-        lvid = Log('video')
-        filename1 = '/tmp/jabber_test/first.log'
-        log1 = Log('first')
-        filename2 = '/tmp/jabber_test/secnd.log'
-        log2 = Log('secnd')
-
-        self.set_date('2011-09-21 01:00:03')
-
-        open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - INFO - Line 01\n')
-        open(filename2, 'w').write('2011-09-21 01:00:02,854 - secnd - INFO - Line 02\n')
-
-        # No video yet, status should be empty
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '')
-        self.assertEquals(bot.status_show, 'away')
-
-        open(filevideo, 'w').write('2011-09-21 01:00:00,854 - video - INFO - Video pele-01.mp4\n')
-
-        # Now status should be name of video
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:00 pele-01.mp4')
-        self.assertEquals(bot.status_show, None)
-
-        # One info should not interfere with status
-        self.set_date('2011-09-21 01:00:04')
-        open(filename1, 'a').write('2011-09-21 01:00:03,854 - first - INFO - Line 03\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:00 pele-01.mp4')
-        self.assertEquals(bot.status_show, None)
-
-        # Error should change status
-        self.set_date('2011-09-21 01:00:05')
-        open(filename1, 'a').write('2011-09-21 01:00:04,854 - first - ERROR - Error 01\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
-        self.assertEquals(bot.status_show, 'dnd')
-
-        # New video won't change status, because error is more important
-        self.set_date('2011-09-21 01:00:06')
-        open(filevideo, 'a').write('2011-09-21 01:00:05,854 - video - INFO - Video pele-02.mp4\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
-        self.assertEquals(bot.status_show, 'dnd')
-
-        # New error will override previous one
-        self.set_date('2011-09-21 01:00:07')
-        open(filename2, 'a').write('2011-09-21 01:00:06,854 - secnd - ERROR - Error 02\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:06 secnd: Error 02')
-        self.assertEquals(bot.status_show, 'dnd')
-
-        # New error of same log will override previous one
-        self.set_date('2011-09-21 01:00:08')
-        open(filename2, 'a').write('2011-09-21 01:00:07,854 - secnd - ERROR - Error 03\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:07 secnd: Error 03')
-        self.assertEquals(bot.status_show, 'dnd')
-
-        # Error expires, video should be set
-        self.set_date('2011-09-21 01:01:18')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:05 pele-02.mp4')
-        self.assertEquals(bot.status_show, None)
-
-        # New error, now on video
-        self.set_date('2011-09-21 01:02:07')
-        open(filevideo, 'a').write('2011-09-21 01:02:06,854 - video - ERROR - Error 04\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:02:06 video: Error 04')
-        self.assertEquals(bot.status_show, 'dnd')
-
-    def test_presence_is_only_sent_when_necessary(self):
-        self.patch_connection()
-
-        self.count = 0
-        def message(*args):
-            self.count += 1
-            
-        server_bot.ERROR_TIMEOUT = 60
-        server_bot.VIDEO_TIMEOUT = 1800
-        server_bot.LOGS = ('video', 'first', 'secnd')
-
-        bot = Bot("","")
-        bot.client = fudge.Fake('client').is_a_stub()
-        bot.client.provides('send').calls(message)
-        
-        filevideo = '/tmp/jabber_test/video.log'
-        lvid = Log('video')
-        filename1 = '/tmp/jabber_test/first.log'
-        log1 = Log('first')
-        filename2 = '/tmp/jabber_test/secnd.log'
-        log2 = Log('secnd')
-
-        self.set_date('2011-09-21 01:00:03')
-
-        open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - INFO - Line 01\n')
-        open(filename2, 'w').write('2011-09-21 01:00:02,854 - secnd - INFO - Line 02\n')
-
-        # No video yet, status should be empty. Only first presence will be sent
-        bot.cycle()
-        self.assertEquals(self.count, 1)
-        bot.cycle()
-        self.assertEquals(self.count, 1)
-
-        open(filevideo, 'w').write('2011-09-21 01:00:00,854 - video - INFO - Video pele-01.mp4\n')
-
-        # Now status should be name of video, presence will be sent
-        bot.cycle()
-        self.assertEquals(self.count, 2)
-        bot.cycle()
-        self.assertEquals(self.count, 2)
-
-        # One info should not interfere with status. Status will be the same, no presence should be sent
-        self.set_date('2011-09-21 01:00:04')
-        open(filename1, 'a').write('2011-09-21 01:00:03,854 - first - INFO - Line 03\n')
-        bot.cycle()
-        self.assertEquals(self.count, 2)
-        bot.cycle()
-        self.assertEquals(self.count, 2)
-
-        # Error should change status
-        self.set_date('2011-09-21 01:00:05')
-        open(filename1, 'a').write('2011-09-21 01:00:04,854 - first - ERROR - Error 01\n')
-        bot.cycle()
-        self.assertEquals(self.count, 3)
-        bot.cycle()
-        self.assertEquals(self.count, 3)
-
-        # New video won't change status
-        self.set_date('2011-09-21 01:00:06')
-        open(filevideo, 'a').write('2011-09-21 01:00:05,854 - video - INFO - Video pele-02.mp4\n')
-        bot.cycle()
-        self.assertEquals(self.count, 3)
-        bot.cycle()
-        self.assertEquals(self.count, 3)
-
-        # New error will override previous one
-        self.set_date('2011-09-21 01:00:07')
-        open(filename2, 'a').write('2011-09-21 01:00:06,854 - secnd - ERROR - Error 02\n')
-        bot.cycle()
-        self.assertEquals(self.count, 4)
-        bot.cycle()
-        self.assertEquals(self.count, 4)
-
-        # Error expires, video should be set
-        self.set_date('2011-09-21 01:01:18')
-        bot.cycle()
-        self.assertEquals(self.count, 5)
-        bot.cycle()
-        self.assertEquals(self.count, 5)
-
-        # After 30 seconds, no presence will be sent
-        self.set_date('2011-09-21 01:01:48')
-        bot.cycle()
-        self.assertEquals(self.count, 5)
-        bot.cycle()
-        self.assertEquals(self.count, 5)
-
-        # After 61 seconds, presence will be sent
-        self.set_date('2011-09-21 01:02:19')
-        bot.cycle()
-        self.assertEquals(self.count, 6)
-        bot.cycle()
-        self.assertEquals(self.count, 6)
-
-    def test_status_can_be_cleared(self):
-        self.patch_connection()
-
-        self.count = 0
-        def message(*args):
-            self.count += 1
-            
-        server_bot.ERROR_TIMEOUT = 60
-        server_bot.LOGS = ('video', 'first', 'secnd')
-
-        bot = Bot("","")
-        bot.client = fudge.Fake('client').is_a_stub()
-        bot.client.provides('send').calls(message)
-        
-        filevideo = '/tmp/jabber_test/video.log'
-        lvid = Log('video')
-        filename1 = '/tmp/jabber_test/first.log'
-        log1 = Log('first')
-        filename2 = '/tmp/jabber_test/secnd.log'
-        log2 = Log('secnd')
-
-        self.set_date('2011-09-21 01:00:03')
-
-        open(filevideo, 'w').write('2011-09-21 01:00:00,854 - video - INFO - Video pele-01.mp4\n')
-
-        # Now status should be name of video
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:00 pele-01.mp4')
-        self.assertEquals(bot.status_show, None)
-
-        # Error will change status
-        self.set_date('2011-09-21 01:00:05')
-        open(filename1, 'a').write('2011-09-21 01:00:04,854 - first - ERROR - Error 01\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
-        self.assertEquals(bot.status_show, 'dnd')
-
-        bot.clear()
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:00 pele-01.mp4')
-        self.assertEquals(bot.status_show, None)
-
-    def test_when_no_new_video_starts_for_long_time_status_turns_to_away(self):
-        self.patch_connection()
-
-        server_bot.VIDEO_TIMEOUT = 120
-        server_bot.LOGS = ('video', 'first', 'secnd')
-
-        bot = Bot("","")
-        bot.client = fudge.Fake('client').is_a_stub()
-        
-        filevideo = '/tmp/jabber_test/video.log'
-        lvid = Log('video')
-
-        self.set_date('2011-09-21 01:00:03')
-
-        open(filevideo, 'w').write('2011-09-21 01:00:00,854 - video - INFO - Video pele-01.mp4\n')
-
-        # Now status should be name of video
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:00 pele-01.mp4')
-        self.assertEquals(bot.status_show, None)
-
-        # One minute later, same video, same status
-        self.set_date('2011-09-21 01:01:04')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:00 pele-01.mp4')
-        self.assertEquals(bot.status_show, None)
-
-        # Two minutes later, same video, same status is dnd
-        self.set_date('2011-09-21 01:02:04')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:00:00 pele-01.mp4')
-        self.assertEquals(bot.status_show, 'away')
-
-        self.set_date('2011-09-21 01:01:06')
-        open(filevideo, 'a').write('2011-09-21 01:01:05,854 - video - INFO - Video pele-02.mp4\n')
-        bot.cycle()
-        self.assertEquals(bot.status_msg, '2011-09-21 01:01:05 pele-02.mp4')
-        self.assertEquals(bot.status_show, None)
 
 if __name__ == "__main__":
     import unittest
