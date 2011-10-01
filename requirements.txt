@@ -1,0 +1,2 @@
+xmpppy==0.5.0rc1
+fudge==1.0.3
