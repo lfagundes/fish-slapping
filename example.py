@@ -21,10 +21,9 @@ class Uptime(object):
         return subprocess.Popen("uptime", stdout=subprocess.PIPE).stdout.read()
 
 if __name__ == "__main__":
-    Bot.LOGS = (
-            ApacheLog("/var/log/apache2/zahia-error.log", "error"),
-            ApacheLog("/var/log/apache2/zahia-access.log", "access"),
-            )
+    Bot.LOGS.append(ApacheLog("/var/log/apache2/zahia-error.log", "error"))
+    Bot.LOGS.append(ApacheLog("/var/log/apache2/zahia-access.log", "access"))
+
     bot = Bot("user@domain.com", "secret_password")
     bot.status = Uptime()
     bot.run()

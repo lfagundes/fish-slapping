@@ -16,26 +16,32 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import xmpp, time, os, subprocess, datetime, fudge
+import xmpp, time, os, subprocess, datetime, logging
 
-ERROR_TIMEOUT = 3660
-
-def get_logger(name):
-    return fudge.Fake('logger', callable=True).returns_fake().is_a_stub()
+PRESENCE_HEARTBEAT = 60
+ERROR_TIMEOUT = 3600
+LOG_PATH = '/var/log/jabber_server_bot.log'
+LOG_NAME = 'jabber-bot'
 
 class Finish(Exception):
     pass
 
 class Status(object):
-    def __init__(self, tstamp, msg):
+    def __init__(self, msg, tstamp = None, show = ''):
+        if tstamp is None:
+            tstamp = datetime.datetime.now()
         self.message = msg
         self.tstamp = tstamp
+        self.show = show
 
     @property
     def time(self):
         return self.tstamp.strftime("%Y-%m-%d %H:%M:%S")
 
 class Error(Status):
+    def __init__(self, msg, tstamp = None):
+        super(Error, self).__init__(msg, tstamp, 'dnd')
+        
     @property
     def expired(self):
         return (datetime.datetime.now() - self.tstamp).seconds > ERROR_TIMEOUT
@@ -45,7 +51,7 @@ class Log(object):
 
     def __init__(self, logfile, name=None):
         if name is None:
-            self.name = os.path.basename(logfile)
+            self.name = os.path.basename(logfile).split('.')[0]
         else:
             self.name = name
         self.buffer = ''
@@ -183,9 +189,9 @@ class Log(object):
                 # This might be a multi-lined log entry
                 continue
             if msgtype == 'ERROR':
-                self._error = Error(tstamp, msg)
+                self._error = Error(msg, tstamp)
             elif msgtype == 'INFO':
-                self.status = Status(tstamp, msg)
+                self.status = Status(msg, tstamp)
 
         return message
 
@@ -256,11 +262,10 @@ class JabberStatus(object):
         
 class Bot(object):
 
-    LOGS = None
-    STATUSES = None
+    LOGS = (Log(LOG_PATH), )
 
     def __init__(self, jid, password):
-        self.logger = get_logger("server_bot")
+        self.logger = self._get_logger()
         self.logs = {}
         self.sessions = {}
 
@@ -268,11 +273,11 @@ class Bot(object):
         self.password = password
         
         for log in self.LOGS:
-            self.logs[log.name] = log
-            self.sessions[log.name] = StreamSessionManager()
-        
-        self.status_msg = 'Server Bot'
-        self.status_show = None
+            self.add_log(log)
+
+        self.current_status = Status('')
+        self.status_msg = ''
+        self.status_show = ''
 
         self.last_presence = None
         self.last_presence_msg = ''
@@ -281,13 +286,26 @@ class Bot(object):
 
         self.connected = False
         
-        self.connect()
-        self.flush_logs()
-
         self.cleared = None
 
+
+    def add_log(self, log):
+        self.logs[log.name] = log
+        self.sessions[log.name] = StreamSessionManager()
+
+    def _get_logger():
+        logfile = open(LOG_PATH, 'a')
+        logger = logging.getLogger(LOG_NAME)
+        logger.setLevel(logging.INFO)
+        ch = logging.StreamHandler(logfile)
+        ch.setLevel(logging.INFO)
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        ch.setFormatter(formatter)
+        logger.addHandler(ch)
+        return logger
+
     def finish(self):
-        time.sleep(60) #evita reconexao rápida
+        time.sleep(60) #avoids fast reconnection
         raise Finish
 
     @property
@@ -361,7 +379,7 @@ class Bot(object):
     def presence(self):
         if (self.status_msg == self.last_presence_msg and 
             self.last_presence is not None and
-            (datetime.datetime.now() - self.last_presence).seconds < 60):
+            (datetime.datetime.now() - self.last_presence).seconds < PRESENCE_HEARTBEAT):
 
             return
 
@@ -389,10 +407,18 @@ class Bot(object):
         self.cleared = datetime.datetime.now()
 
     def set_state(self):
-        self.status_show = None
+        status = Status(msg = self.status.get_status(),
+                        show = self.status.get_status_show())
 
-        self.status_msg = '%s %s' % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                     self.status.get_status())
+        if status.message != self.current_status.message:
+            self.current_status = status
+
+        if status.show != self.status_show:
+            self.current_status.show = status.show
+        
+        self.status_show = self.current_status.show
+        self.status_msg = '%s %s' % (self.current_status.time,
+                                     self.current_status.message)
         
         tstamp = None
         for name, log in self.logs.items():
@@ -452,7 +478,7 @@ class Bot(object):
         elif message[0] == 'help':
             self.client.send(xmpp.Message(sender_id, HELP))
         else:
-                self.logger.warn("Unknown message")
+            self.logger.warn("Unknown message")
 
 if __name__ == '__main__':
     Bot().run()

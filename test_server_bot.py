@@ -552,6 +552,401 @@ class StreamSessionManagerTest(BaseTest):
         self.assertTrue('test2@domain.com' in session.receivers)
         self.assertTrue('test3@domain.com' not in session.receivers)
 
+class BotTest(BaseTest):
+
+    class Status(object):
+        def __init__(self):
+            self.status = 'Ok'
+            self.status_show = ''
+        def get_status(self):
+            return self.status
+        def get_status_show(self):
+            return self.status_show
+
+    def setUp(self):
+        self.original_logs = Bot.LOGS
+        super(BotTest, self).setUp()
+
+        fake_logger = fudge.Fake('logger', callable=True).returns_fake().is_a_stub()
+        self.logger_patch = fudge.patch_object(Bot, '_get_logger', fake_logger)
+
+        self.connect_patch = None
+
+    def patch_connection(self):
+        fake_connect = fudge.Fake('connect', callable=True).returns(True)
+        self.connect_patch = fudge.patch_object(Bot, 'connect', fake_connect)
+        
+    def tearDown(self):
+        Bot.LOGS = self.original_logs
+        super(BotTest, self).tearDown()
+        self.logger_patch.restore()
+        if self.connect_patch:
+            self.connect_patch.restore()
+
+    def test_status_is_set_according_to_status_class(self):
+        self.patch_connection()
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        
+        self.set_date('2011-09-21 01:00:03')
+
+        # Status should be 'Ok'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+        # Status change should reflect in bot's status
+        status.status = 'Other status'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Other status')
+        self.assertEquals(bot.status_show, '')
+        status.status_show = 'away'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Other status')
+        self.assertEquals(bot.status_show, 'away')
+
+
+    def test_status_show_time_when_status_was_last_changed(self):
+        self.patch_connection()
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        
+        self.set_date('2011-09-21 01:00:03')
+
+        # Status should be 'Ok'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+        # Status change should reflect in bot's status, with new time
+        self.set_date('2011-09-21 01:00:04')
+        status.status = 'Other status'
+        status.status_show = 'away'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 Other status')
+        self.assertEquals(bot.status_show, 'away')
+
+        # New time won't change status time if message is not changed
+        self.set_date('2011-09-21 01:00:05')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 Other status')
+        self.assertEquals(bot.status_show, 'away')
+
+        # Status will be changed now
+        self.set_date('2011-09-21 01:00:06')
+        status.status = 'New status'
+        status.status_show = 'away'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:06 New status')
+        self.assertEquals(bot.status_show, 'away')
+
+    def test_date_of_message_will_be_preserved_if_only_status_show_changes(self):
+        self.patch_connection()
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        
+        self.set_date('2011-09-21 01:00:03')
+
+        # Status should be 'Ok'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+        # Status change should reflect in bot's status, with new time
+        self.set_date('2011-09-21 01:00:04')
+        status.status_show = 'away'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, 'away')
+
+
+    def test_error_will_override_status(self):
+        self.patch_connection()
+
+        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
+                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
+                    )
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        
+        filename1 = '/tmp/jabber_test/first.log'
+        log1 = Log('first')
+        filename2 = '/tmp/jabber_test/secnd.log'
+        log2 = Log('secnd')
+
+        self.set_date('2011-09-21 01:00:03')
+
+        open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - INFO - Line 01\n')
+        open(filename2, 'w').write('2011-09-21 01:00:02,854 - secnd - INFO - Line 02\n')
+
+        # Status should be 'Ok'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+        # One info should not interfere with status
+        self.set_date('2011-09-21 01:00:04')
+        open(filename1, 'a').write('2011-09-21 01:00:03,854 - first - INFO - Line 03\n')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+        # Error should change status
+        self.set_date('2011-09-21 01:00:05')
+        open(filename1, 'a').write('2011-09-21 01:00:04,854 - first - ERROR - Error 01\n')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
+        self.assertEquals(bot.status_show, 'dnd')
+
+        # Status update won't change bot status, because error is more important
+        self.set_date('2011-09-21 01:00:06')
+        status.status = 'New status'
+        status.status_show = ''
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
+        self.assertEquals(bot.status_show, 'dnd')
+
+        # New error will override previous one
+        self.set_date('2011-09-21 01:00:07')
+        open(filename2, 'a').write('2011-09-21 01:00:06,854 - secnd - ERROR - Error 02\n')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:06 secnd: Error 02')
+        self.assertEquals(bot.status_show, 'dnd')
+
+        # New error of same log will override previous one
+        self.set_date('2011-09-21 01:00:08')
+        open(filename2, 'a').write('2011-09-21 01:00:07,854 - secnd - ERROR - Error 03\n')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:07 secnd: Error 03')
+        self.assertEquals(bot.status_show, 'dnd')
+
+
+    def test_recent_errors_will_be_shown_on_initialization(self):
+        self.patch_connection()
+
+        server_bot.ERROR_TIMEOUT = 60
+        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
+                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
+                    )
+
+        self.set_date('2011-09-21 01:00:03')
+
+        filename1 = '/tmp/jabber_test/first.log'
+        log1 = Log('first')
+        filename2 = '/tmp/jabber_test/secnd.log'
+        log2 = Log('secnd')
+
+        open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - ERROR - Error 01\n')
+        open(filename2, 'w').write('2011-09-21 01:00:02,854 - secnd - INFO - Line 02\n')
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:01 first: Error 01')
+        self.assertEquals(bot.status_show, 'dnd')
+
+    def test_old_errors_will_not_be_shown_on_initialization(self):
+        self.patch_connection()
+
+        server_bot.ERROR_TIMEOUT = 60
+        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
+                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
+                    )
+
+        self.set_date('2011-09-21 01:00:03')
+
+        filename1 = '/tmp/jabber_test/first.log'
+        log1 = Log('first')
+        filename2 = '/tmp/jabber_test/secnd.log'
+        log2 = Log('secnd')
+
+        open(filename1, 'w').write('2011-09-21 00:30:01,854 - first - ERROR - Error 01\n')
+        open(filename2, 'w').write('2011-09-21 00:30:02,854 - secnd - INFO - Line 02\n')
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        
+        # Status should be 'Ok'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+    def test_error_expires(self):
+        self.patch_connection()
+
+        server_bot.ERROR_TIMEOUT = 60
+        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
+                    )
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        
+        filename1 = '/tmp/jabber_test/first.log'
+        log1 = Log('first')
+
+        self.set_date('2011-09-21 01:00:03')
+
+        open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - INFO - Line 01\n')
+
+        # Status should be 'Ok'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+        # Error should change status
+        self.set_date('2011-09-21 01:00:05')
+        open(filename1, 'a').write('2011-09-21 01:00:04,854 - first - ERROR - Error 01\n')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
+        self.assertEquals(bot.status_show, 'dnd')
+
+        # Error expires
+        self.set_date('2011-09-21 01:01:08')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+
+    def test_status_can_be_cleared(self):
+        self.patch_connection()
+
+        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
+                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
+                    )
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        
+        filename1 = '/tmp/jabber_test/first.log'
+        log1 = Log('first')
+
+        self.set_date('2011-09-21 01:00:03')
+
+        open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - INFO - Line 01\n')
+
+        # Status should be 'Ok'
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+        # Error will change status
+        self.set_date('2011-09-21 01:00:05')
+        open(filename1, 'a').write('2011-09-21 01:00:04,854 - first - ERROR - Error 01\n')
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
+        self.assertEquals(bot.status_show, 'dnd')
+
+        bot.clear()
+        bot.cycle()
+        self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
+        self.assertEquals(bot.status_show, '')
+
+    def test_presence_is_only_sent_when_necessary(self):
+        self.patch_connection()
+
+        self.count = 0
+        def message(*args):
+            self.count += 1
+
+        server_bot.ERROR_TIMEOUT = 30
+        server_bot.PRESENCE_HEARTBEAT = 50
+        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),)
+
+        status = self.Status()
+        
+        bot = Bot('user@server', 'pass')
+        bot.status = status
+        bot.client = fudge.Fake('client').is_a_stub()
+        bot.client.provides('send').calls(message)
+        
+        filename1 = '/tmp/jabber_test/first.log'
+
+        self.set_date('2011-09-21 01:00:03')
+
+        open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - INFO - Line 01\n')
+
+        # Status is 'Ok', only first presence will be sent
+        bot.cycle()
+        self.assertEquals(self.count, 1)
+        bot.cycle()
+        self.assertEquals(self.count, 1)
+
+        # Status changes, one presence will be sent
+        self.set_date('2011-09-21 01:00:03')
+        status.status = 'New status'
+        bot.cycle()
+        self.assertEquals(self.count, 2)
+        bot.cycle()
+        self.assertEquals(self.count, 2)
+
+        # Error will cause new presence broadcast
+        self.set_date('2011-09-21 01:00:05')
+        open(filename1, 'a').write('2011-09-21 01:00:04,854 - first - ERROR - Error 01\n')
+        bot.cycle()
+        self.assertEquals(self.count, 3)
+
+        # Several seconds passes, no presence broadcast
+        self.set_date('2011-09-21 01:00:06')
+        bot.cycle()
+        self.assertEquals(self.count, 3)
+        self.set_date('2011-09-21 01:00:07')
+        bot.cycle()
+        self.assertEquals(self.count, 3)
+        self.set_date('2011-09-21 01:00:08')
+        bot.cycle()
+        self.assertEquals(self.count, 3)
+        self.set_date('2011-09-21 01:00:09')
+        bot.cycle()
+        self.assertEquals(self.count, 3)
+        self.set_date('2011-09-21 01:00:10')
+        bot.cycle()
+        self.assertEquals(self.count, 3)
+
+        # Error expires, one broadcast
+        self.set_date('2011-09-21 01:00:35')
+        bot.cycle()
+        self.assertEquals(self.count, 4)
+
+        # 40 seconds passes, no broadcast
+        self.set_date('2011-09-21 01:01:15')
+        bot.cycle()
+        self.assertEquals(self.count, 4)
+
+        # 11 more seconds and presence heartbeat forces presence broadcast
+        self.set_date('2011-09-21 01:01:26')
+        bot.cycle()
+        self.assertEquals(self.count, 5)
+
+
 
 
 if __name__ == "__main__":
