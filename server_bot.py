@@ -262,7 +262,7 @@ class JabberStatus(object):
         
 class Bot(object):
 
-    LOGS = (Log(LOG_PATH), )
+    LOGS = [ Log(LOG_PATH) ]
 
     def __init__(self, jid, password):
         self.logger = self._get_logger()
@@ -293,7 +293,7 @@ class Bot(object):
         self.logs[log.name] = log
         self.sessions[log.name] = StreamSessionManager()
 
-    def _get_logger():
+    def _get_logger(self):
         logfile = open(LOG_PATH, 'a')
         logger = logging.getLogger(LOG_NAME)
         logger.setLevel(logging.INFO)
