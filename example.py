@@ -22,8 +22,22 @@ class ApacheLog(Log):
         return tstamp, msgtype, msg  
 
 class Uptime(object):
-    def get_status(self):
+    def uptime(self):
         return subprocess.Popen("uptime", stdout=subprocess.PIPE).stdout.read()
+
+    def load(self):
+        return float(self.uptime().split(':')[-1].split(',')[0].strip())
+
+    def get_status(self):
+        return self.uptime()
+
+    def get_status_show(self):
+        load = self.load()
+        if load > 4:
+            return 'dnd'
+        if load > 2:
+            return 'away'
+        return ''
 
 if __name__ == "__main__":
 
