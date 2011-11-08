@@ -18,11 +18,6 @@
 
 import xmpp, time, os, subprocess, datetime, logging
 
-PRESENCE_HEARTBEAT = 60
-ERROR_TIMEOUT = 3600
-LOG_PATH = '/var/log/jabber_server_bot.log'
-LOG_NAME = 'jabber-bot'
-
 class Finish(Exception):
     pass
 
@@ -39,17 +34,20 @@ class Status(object):
         return self.tstamp.strftime("%Y-%m-%d %H:%M:%S")
 
 class Error(Status):
-    def __init__(self, msg, tstamp = None):
+    def __init__(self, msg, tstamp = None, error_timeout=3600):
         super(Error, self).__init__(msg, tstamp, 'dnd')
+        self.error_timeout = error_timeout
         
     @property
     def expired(self):
-        return (datetime.datetime.now() - self.tstamp).seconds > ERROR_TIMEOUT
+        return (datetime.datetime.now() - self.tstamp).seconds > self.error_timeout
 
 
 class Log(object):
 
-    def __init__(self, logfile, name=None):
+    DEFAULT_ERROR_TIMEOUT = 3600
+    
+    def __init__(self, logfile, name=None, error_timeout=None):
         if name is None:
             self.name = os.path.basename(logfile).split('.')[0]
         else:
@@ -57,11 +55,13 @@ class Log(object):
         self.buffer = ''
         self.log = None
 
+        self.error_timeout = error_timeout or self.DEFAULT_ERROR_TIMEOUT
+
         self.logfile = logfile
         self.openfile(start=True)
         self.status = None
         self._error = None
-        self.rewind(dtime=ERROR_TIMEOUT)
+        self.rewind(dtime=self.error_timeout)
         self.flush()
 
 
@@ -189,13 +189,13 @@ class Log(object):
                 # This might be a multi-lined log entry
                 continue
             if msgtype == 'ERROR':
-                self._error = Error(msg, tstamp)
+                self._error = Error(msg, tstamp, error_timeout=self.error_timeout)
             elif msgtype == 'INFO':
                 self.status = Status(msg, tstamp)
 
         return message
 
-    def parse_line(self, line):
+    def parse_line(self, line): 
         dtime, name, msgtype, msg = line.split(' - ')
         tstamp = datetime.datetime.strptime(dtime.split(',')[0], '%Y-%m-%d %H:%M:%S')
         return tstamp, msgtype, msg
@@ -262,19 +262,23 @@ class JabberStatus(object):
         
 class Bot(object):
 
-    LOGS = [ Log(LOG_PATH) ]
+    def __init__(self, jid, password,
+                 presence_heartbeat = 60,
+                 log_error_timeout = None,
+                 log_path = '/var/log/fish-slapping.log',
+                 log_name = 'fish-slapping'):
 
-    def __init__(self, jid, password):
-        self.logger = self._get_logger()
+        self.logger = self._get_logger(log_path, log_name)
         self.logs = {}
         self.sessions = {}
 
         self.jid = jid
         self.password = password
-        
-        for log in self.LOGS:
-            self.add_log(log)
 
+        self.presence_heartbeat = presence_heartbeat
+
+        self.add_log(Log(log_path, error_timeout=log_error_timeout))
+        
         self.current_status = Status('')
         self.status_msg = ''
         self.status_show = ''
@@ -282,7 +286,7 @@ class Bot(object):
         self.last_presence = None
         self.last_presence_msg = ''
 
-        self.logger.info("Started, connecting...")
+        self.logger.info("Started")
 
         self.connected = False
         
@@ -293,9 +297,9 @@ class Bot(object):
         self.logs[log.name] = log
         self.sessions[log.name] = StreamSessionManager()
 
-    def _get_logger(self):
-        logfile = open(LOG_PATH, 'a')
-        logger = logging.getLogger(LOG_NAME)
+    def _get_logger(self, path, name):
+        logfile = open(path, 'a')
+        logger = logging.getLogger(name)
         logger.setLevel(logging.INFO)
         ch = logging.StreamHandler(logfile)
         ch.setLevel(logging.INFO)
@@ -318,6 +322,7 @@ class Bot(object):
 
 
     def connect(self):
+        self.logger.info("Connecting..." % result)
         self.client =  xmpp.Client(self.host)
         result = self.client.connect()
 
@@ -379,7 +384,7 @@ class Bot(object):
     def presence(self):
         if (self.status_msg == self.last_presence_msg and 
             self.last_presence is not None and
-            (datetime.datetime.now() - self.last_presence).seconds < PRESENCE_HEARTBEAT):
+            (datetime.datetime.now() - self.last_presence).seconds < self.presence_heartbeat):
 
             return
 

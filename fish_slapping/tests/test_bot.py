@@ -19,8 +19,7 @@
 import os, time, fudge, datetime
 from unittest import TestCase
 
-import server_bot
-from server_bot import Log, StreamSessionManager, Bot
+from fish_slapping import Log, StreamSessionManager, Bot
 
 class BaseTest(TestCase):
 
@@ -322,12 +321,10 @@ class LogTest(BaseTest):
     def test_error_status_will_expire(self):
         filename = '/tmp/jabber_test/basic.log'
 
-        server_bot.ERROR_TIMEOUT = 120
-
         self.set_date('2011-09-21 01:00:03')
         open(filename, 'w').write('2011-09-21 01:00:02,854 - basic - ERROR - Some error message\n')
 
-        log = Log(filename)
+        log = Log(filename, error_timeout=120)
 
         self.assertTrue(log.error)
         self.assertEquals(log.error.time, '2011-09-21 01:00:02')
@@ -340,8 +337,6 @@ class LogTest(BaseTest):
     def test_recent_error_messages_will_set_error_status_on_startup(self):
         filename = '/tmp/jabber_test/basic.log'
 
-        server_bot.ERROR_TIMEOUT = 120
-
         self.set_date('2011-09-21 01:00:10')
         open(filename, 'w').write('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n' +
                                   '2011-09-21 01:00:02,854 - basic - ERROR - Line 02\n' +
@@ -350,7 +345,7 @@ class LogTest(BaseTest):
                                   '2011-09-21 01:00:05,854 - basic - INFO - Line 05\n'
                                   )
 
-        log = Log(filename)
+        log = Log(filename, error_timeout=120)
 
         self.assertTrue(log.error)
         self.assertEquals(log.error.time, '2011-09-21 01:00:04')
@@ -359,7 +354,6 @@ class LogTest(BaseTest):
     def test_old_error_messages_will_be_ignored_on_startup(self):
         filename = '/tmp/jabber_test/basic.log'
 
-        server_bot.ERROR_TIMEOUT = 120
 
         self.set_date('2011-09-21 01:05:10')
         open(filename, 'w').write('2011-09-21 01:00:01,854 - basic - INFO - Line 01\n' +
@@ -369,16 +363,14 @@ class LogTest(BaseTest):
                                   '2011-09-21 01:00:05,854 - basic - INFO - Line 05\n'
                                   )
 
-        log = Log(filename)
+        log = Log(filename, error_timeout=120)
 
         self.assertTrue(not log.error)
 
     def test_last_info_message_will_be_in_status(self):
         filename = '/tmp/jabber_test/basic.log'
 
-        server_bot.ERROR_TIMEOUT = 120
-
-        log = Log(filename)
+        log = Log(filename, error_timeout=120)
 
         self.assertTrue(not log.status)
 
@@ -564,7 +556,6 @@ class BotTest(BaseTest):
             return self.status_show
 
     def setUp(self):
-        self.original_logs = Bot.LOGS
         super(BotTest, self).setUp()
 
         fake_logger = fudge.Fake('logger', callable=True).returns_fake().is_a_stub()
@@ -577,7 +568,6 @@ class BotTest(BaseTest):
         self.connect_patch = fudge.patch_object(Bot, 'connect', fake_connect)
         
     def tearDown(self):
-        Bot.LOGS = self.original_logs
         super(BotTest, self).tearDown()
         self.logger_patch.restore()
         if self.connect_patch:
@@ -675,13 +665,11 @@ class BotTest(BaseTest):
     def test_error_will_override_status(self):
         self.patch_connection()
 
-        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
-                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
-                    )
-
         status = self.Status()
         
         bot = Bot('user@server', 'pass')
+        bot.add_log(Log('/tmp/jabber_test/first.log', 'first'))
+        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd'))
         bot.status = status
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -740,11 +728,6 @@ class BotTest(BaseTest):
     def test_recent_errors_will_be_shown_on_initialization(self):
         self.patch_connection()
 
-        server_bot.ERROR_TIMEOUT = 60
-        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
-                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
-                    )
-
         self.set_date('2011-09-21 01:00:03')
 
         filename1 = '/tmp/jabber_test/first.log'
@@ -758,6 +741,8 @@ class BotTest(BaseTest):
         status = self.Status()
         
         bot = Bot('user@server', 'pass')
+        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
+        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd', error_timeout=60))
         bot.status = status
         bot.client = fudge.Fake('client').is_a_stub()
 
@@ -767,11 +752,6 @@ class BotTest(BaseTest):
 
     def test_old_errors_will_not_be_shown_on_initialization(self):
         self.patch_connection()
-
-        server_bot.ERROR_TIMEOUT = 60
-        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
-                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
-                    )
 
         self.set_date('2011-09-21 01:00:03')
 
@@ -786,6 +766,8 @@ class BotTest(BaseTest):
         status = self.Status()
         
         bot = Bot('user@server', 'pass')
+        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
+        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd', error_timeout=60))
         bot.status = status
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -797,13 +779,10 @@ class BotTest(BaseTest):
     def test_error_expires(self):
         self.patch_connection()
 
-        server_bot.ERROR_TIMEOUT = 60
-        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
-                    )
-
         status = self.Status()
         
         bot = Bot('user@server', 'pass')
+        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
         bot.status = status
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -836,13 +815,11 @@ class BotTest(BaseTest):
     def test_status_can_be_cleared(self):
         self.patch_connection()
 
-        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),
-                    Log('/tmp/jabber_test/secnd.log', 'secnd'),
-                    )
-
         status = self.Status()
         
         bot = Bot('user@server', 'pass')
+        bot.add_log(Log('/tmp/jabber_test/first.log', 'first'))
+        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd'))
         bot.status = status
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -877,13 +854,10 @@ class BotTest(BaseTest):
         def message(*args):
             self.count += 1
 
-        server_bot.ERROR_TIMEOUT = 30
-        server_bot.PRESENCE_HEARTBEAT = 50
-        Bot.LOGS = (Log('/tmp/jabber_test/first.log', 'first'),)
-
         status = self.Status()
         
-        bot = Bot('user@server', 'pass')
+        bot = Bot('user@server', 'pass', presence_heartbeat=50)
+        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=30))
         bot.status = status
         bot.client = fudge.Fake('client').is_a_stub()
         bot.client.provides('send').calls(message)

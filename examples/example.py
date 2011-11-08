@@ -41,9 +41,8 @@ class Uptime(object):
 
 if __name__ == "__main__":
 
-    Bot.LOGS.append(ApacheLog("/var/log/apache2/error.log", "error"))
-    Bot.LOGS.append(ApacheLog("/var/log/apache2/access.log", "access"))
-
     bot = Bot("user@domain.com", "secret_password")
     bot.status = Uptime()
+    bot.add_log(ApacheLog("/var/log/apache2/error.log", "error"))
+    bot.add_log(ApacheLog("/var/log/apache2/access.log", "access"))
     bot.run()
