@@ -268,8 +268,10 @@ class Bot(object):
     def __init__(self, jid, password,
                  presence_heartbeat = 60,
                  log_error_timeout = None,
-                 log_path = '/var/log/fish-slapping.log',
-                 log_name = 'fish-slapping'):
+                 log_path = '/tmp/fish-slapping.log',
+                 log_name = 'fish-slapping',
+                 server = None,
+                 port = 5222):
 
         self.logger = self._get_logger(log_path, log_name)
         self.logs = {}
@@ -278,6 +280,8 @@ class Bot(object):
         
         self.jid = jid
         self.password = password
+        self.server = server or self.host
+        self.port = port
 
         self.presence_heartbeat = presence_heartbeat
 
@@ -294,6 +298,7 @@ class Bot(object):
         self.logger.info("Started")
 
         self.connected = False
+        self.first_connection = True
         
         self.cleared = None
 
@@ -315,7 +320,6 @@ class Bot(object):
         return logger
 
     def finish(self):
-        time.sleep(60) #avoids fast reconnection
         raise Finish
 
     @property
@@ -328,12 +332,12 @@ class Bot(object):
 
 
     def connect(self):
-        self.logger.info("Connecting..." % result)
+        self.logger.info("Connecting...")
         self.client =  xmpp.Client(self.host)
-        result = self.client.connect()
+        result = self.client.connect(server=(self.server, self.port))
 
         if result:
-            self.logger.info("Connected as %s" % result)
+            self.logger.info("Connected as %s, authenticating..." % result)
         else:
             self.logger.warn("Couldn't connect")
             self.finish()
@@ -343,7 +347,7 @@ class Bot(object):
         if auth:
             self.logger.info("Authenticated")
         else:
-            self.logger.warn("Couldn't authenticate")
+            self.logger.error("Couldn't authenticate")
             self.finish()
 
         self.connected = True
@@ -358,7 +362,9 @@ class Bot(object):
 
     def reconnect(self):
         self.connected = False
-        time.sleep(10)
+        if not self.first_connection:
+            time.sleep(10)
+        self.first_connection = False
         self.connect()
 
     def run(self):
@@ -378,7 +384,6 @@ class Bot(object):
             if type(e) is Finish:
                 return
             self.logger.error(e)
-            time.sleep(5)
 
     def public_ip(self):
         # TODO move to plugin
