@@ -259,7 +259,7 @@ class JabberStatus(object):
     def __init__(self, show = None, status = None):
         self.show = show
         self.stauts = status
-        
+
 class Bot(object):
 
     def __init__(self, jid, password,
@@ -271,6 +271,7 @@ class Bot(object):
         self.logger = self._get_logger(log_path, log_name)
         self.logs = {}
         self.sessions = {}
+        self.commands = {}
 
         self.jid = jid
         self.password = password
@@ -291,7 +292,6 @@ class Bot(object):
         self.connected = False
         
         self.cleared = None
-
 
     def add_log(self, log):
         self.logs[log.name] = log
@@ -463,27 +463,40 @@ class Bot(object):
             else:
                 self.sessions[target].add(sender_id)
                 self.logs[target].rewind(lines=lines)
+            return
 
-        elif message[0] == 'stop':
+        if message[0] == 'stop':
             for session in self.sessions.values():
                 session.remove(sender_id)
             self.client.send(xmpp.Message(sender_id, '--- fim dos logs'))
+            return
 
-        elif message[0] == 'uptime':
+        if message[0] == 'uptime':
             message = subprocess.Popen(['uptime'], stdout=subprocess.PIPE).stdout.read()
             self.client.send(xmpp.Message(sender_id, '\n' + message))
+            return
             
-        elif message[0] == 'ip':
+        if message[0] == 'ip':
+            # TODO remove to plugin
             self.client.send(xmpp.Message(sender_id, self.public_ip()))
+            return
 
-        elif message[0] == 'clear':
+        if message[0] == 'clear':
             self.clear()
             self.presence()
-            
-        elif message[0] == 'help':
+            return
+        
+        if message[0] == 'help':
             self.client.send(xmpp.Message(sender_id, HELP))
-        else:
-            self.logger.warn("Unknown message")
+            return
+
+        cmd = self.commands.get(message[0])
+        if cmd:
+            response = cmd(self, message[1:])
+            self.client.send(xmpp.Message(sender_id, response))
+            return
+
+        self.logger.warn("Unknown message")
 
 if __name__ == '__main__':
     Bot().run()

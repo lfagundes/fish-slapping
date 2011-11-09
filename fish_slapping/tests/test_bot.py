@@ -17,35 +17,10 @@
 #
 
 import os, time, fudge, datetime
-from unittest import TestCase
+from fish_slapping.tests import BaseTest
 
 from fish_slapping import Log, StreamSessionManager, Bot
 
-class BaseTest(TestCase):
-
-    def _rmdir(self):
-        os.system('rm -rf /tmp/jabber_test/')
-
-    def setUp(self):
-        self.patch = None
-        self._rmdir()
-        os.mkdir('/tmp/jabber_test')
-        fake_sleep = fudge.Fake('sleep', callable=True).returns(None)
-        self.sleep_patch = fudge.patch_object(time, 'sleep', fake_sleep)
-
-    def tearDown(self):
-        if self.patch:
-            self.patch.restore()
-        self.sleep_patch.restore()
-        self._rmdir()
-
-    def set_date(self, datestr):
-        tstamp = datetime.datetime.strptime(datestr, '%Y-%m-%d %H:%M:%S')
-        fake = fudge.Fake('now', callable=True).returns(tstamp)
-        if self.patch:
-            self.patch.restore()
-        self.patch = fudge.patch_object(datetime.datetime, 'now', fake)
-    
 class LogTest(BaseTest):
 
     def test_rewind_will_work_with_non_existing_log(self):
