@@ -114,8 +114,8 @@ class BotTest(BaseTest):
 
     def test_error_will_override_status(self):
         bot = Bot('user@server', 'pass')
-        bot.add_log(Log('/tmp/jabber_test/first.log', 'first'))
-        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd'))
+        bot.logs['first'] = Log('/tmp/jabber_test/first.log')
+        bot.logs['secnd'] = Log('/tmp/jabber_test/secnd.log')
         bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -182,8 +182,8 @@ class BotTest(BaseTest):
         open(filename2, 'w').write('2011-09-21 01:00:02,854 - secnd - INFO - Line 02\n')
 
         bot = Bot('user@server', 'pass')
-        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
-        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd', error_timeout=60))
+        bot.logs['first'] = Log('/tmp/jabber_test/first.log', error_timeout=60)
+        bot.logs['secnd'] = Log('/tmp/jabber_test/secnd.log', error_timeout=60)
         bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
 
@@ -203,8 +203,8 @@ class BotTest(BaseTest):
         open(filename2, 'w').write('2011-09-21 00:30:02,854 - secnd - INFO - Line 02\n')
 
         bot = Bot('user@server', 'pass')
-        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
-        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd', error_timeout=60))
+        bot.logs['first'] = Log('/tmp/jabber_test/first.log', error_timeout=60)
+        bot.logs['secnd'] = Log('/tmp/jabber_test/secnd.log', error_timeout=60)
         bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -215,7 +215,7 @@ class BotTest(BaseTest):
 
     def test_error_expires(self):
         bot = Bot('user@server', 'pass')
-        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
+        bot.logs['first'] = Log('/tmp/jabber_test/first.log', error_timeout=60)
         bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -247,8 +247,8 @@ class BotTest(BaseTest):
 
     def test_status_can_be_cleared(self):
         bot = Bot('user@server', 'pass')
-        bot.add_log(Log('/tmp/jabber_test/first.log', 'first'))
-        bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd'))
+        bot.logs['first'] = Log('/tmp/jabber_test/first.log')
+        bot.logs['secnd'] = Log('/tmp/jabber_test/secnd.log')
         bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
@@ -282,7 +282,7 @@ class BotTest(BaseTest):
             self.count += 1
 
         bot = Bot('user@server', 'pass', presence_heartbeat=50)
-        bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=30))
+        bot.logs['first'] = Log('/tmp/jabber_test/first.log', error_timeout=30)
         bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         bot.client.provides('send').calls(message)

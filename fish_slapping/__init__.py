@@ -43,6 +43,61 @@ class Error(Status):
         return (datetime.datetime.now() - self.tstamp).seconds > self.error_timeout
 
 
+class StreamSession():
+    def __init__(self, jid, timeout = None, condition = None):
+        self.jid = jid
+        self.timeout = timeout
+        self.condition = condition
+        self.start = datetime.datetime.now()
+
+    @property
+    def expired(self):
+        if self.timeout and (datetime.datetime.now() - self.start).seconds > self.timeout:
+            return True
+        if self.condition is not None and not self.condition():
+            return True
+        return False
+
+class StreamSessionManager(object):
+
+    def __init__(self):
+        self.sessions = []
+
+    def add(self, jid, timeout = None, condition = None):
+        self.sessions.append(StreamSession(jid, timeout, condition))
+
+    @property
+    def receivers(self):
+        jids = []
+        for jid in [ session.jid for session in self.sessions ]:
+            if jid not in jids:
+                jids.append(jid)
+        return jids
+        
+
+    def expire(self):
+        jids = []
+        i = 0
+        while i < len(self.sessions):
+            if self.sessions[i].expired:
+                jids.append(self.sessions.pop(i).jid)
+            else:
+                i += 1
+        for jid in [ session.jid for session in self.sessions ]:
+            try:
+                jids.remove(jid)
+            except ValueError:
+                pass
+        return jids
+
+    def remove(self, jid):
+        i = 0
+        while i < len(self.sessions):
+            if self.sessions[i].jid == jid:
+                self.sessions.pop(i)
+            else:
+                i += 1
+
 class Log(object):
 
     DEFAULT_ERROR_TIMEOUT = 3600
@@ -54,6 +109,8 @@ class Log(object):
             self.name = name
         self.buffer = ''
         self.log = None
+
+        self.session = StreamSessionManager()
 
         self.error_timeout = error_timeout or self.DEFAULT_ERROR_TIMEOUT
 
@@ -200,60 +257,6 @@ class Log(object):
         tstamp = datetime.datetime.strptime(dtime.split(',')[0], '%Y-%m-%d %H:%M:%S')
         return tstamp, msgtype, msg
 
-class StreamSession():
-    def __init__(self, jid, timeout = None, condition = None):
-        self.jid = jid
-        self.timeout = timeout
-        self.condition = condition
-        self.start = datetime.datetime.now()
-
-    @property
-    def expired(self):
-        if self.timeout and (datetime.datetime.now() - self.start).seconds > self.timeout:
-            return True
-        if self.condition is not None and not self.condition():
-            return True
-        return False
-
-class StreamSessionManager(object):
-
-    def __init__(self):
-        self.sessions = []
-
-    def add(self, jid, timeout = None, condition = None):
-        self.sessions.append(StreamSession(jid, timeout, condition))
-
-    @property
-    def receivers(self):
-        jids = []
-        for jid in [ session.jid for session in self.sessions ]:
-            if jid not in jids:
-                jids.append(jid)
-        return jids
-        
-
-    def expire(self):
-        jids = []
-        i = 0
-        while i < len(self.sessions):
-            if self.sessions[i].expired:
-                jids.append(self.sessions.pop(i).jid)
-            else:
-                i += 1
-        for jid in [ session.jid for session in self.sessions ]:
-            try:
-                jids.remove(jid)
-            except ValueError:
-                pass
-        return jids
-
-    def remove(self, jid):
-        i = 0
-        while i < len(self.sessions):
-            if self.sessions[i].jid == jid:
-                self.sessions.pop(i)
-            else:
-                i += 1
 
 class JabberStatus(object):
     def __init__(self, show = None, status = None):
@@ -270,7 +273,6 @@ class Bot(object):
 
         self.logger = self._get_logger(log_path, log_name)
         self.logs = {}
-        self.sessions = {}
         self.commands = {}
         self._register_commands()
         
@@ -279,7 +281,7 @@ class Bot(object):
 
         self.presence_heartbeat = presence_heartbeat
 
-        self.add_log(Log(log_path, name=log_name, error_timeout=log_error_timeout))
+        self.logs[log_name] = Log(log_path, name=log_name, error_timeout=log_error_timeout)
         
         self.current_status = Status('')
         self.status_msg = ''
@@ -300,10 +302,6 @@ class Bot(object):
             if method.startswith('cmd_'):
                 name = method[4:]
                 self.commands[name] = self.__getattribute__(method)
-
-    def add_log(self, log):
-        self.logs[log.name] = log
-        self.sessions[log.name] = StreamSessionManager()
 
     def _get_logger(self, path, name):
         logfile = open(path, 'a')
@@ -407,13 +405,12 @@ class Bot(object):
     def flush_logs(self):
         for logname, log in self.logs.items():
             message = log.flush()
-            session = self.sessions[logname]
 
             if message:
-                for jid in session.receivers:
+                for jid in log.session.receivers:
                     self.client.send(xmpp.Message(jid, '\n' + message))
 
-            expired = session.expire()
+            expired = log.session.expire()
             for jid in expired:
                 self.client.send(xmpp.Message(jid, '--- fim de %s' % logname))
 
@@ -479,12 +476,12 @@ class Bot(object):
             self.client.send(xmpp.Message(sender_id, "Target %s unknown" % target))
             self.logger.warn("Target %s unknown" % target)
         else:
-            self.sessions[target].add(sender_id)
+            self.logs[target].session.add(sender_id)
             self.logs[target].rewind(lines=lines)
 
     def cmd_stop(self, sender_id, message):
-        for session in self.sessions.values():
-            session.remove(sender_id)
+        for log in self.logs.values():
+            log.session.remove(sender_id)
         return '--- end of logs'
 
     def cmd_help(self, sender_id, message):
