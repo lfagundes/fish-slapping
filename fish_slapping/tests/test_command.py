@@ -20,16 +20,19 @@
 import xmpp, fudge
 from fish_slapping import Bot
 
-def test_new_command_can_be_created():
+def fake_bot(replies):
     bot = Bot('user@server', 'pass', log_path='/tmp/delme.log')
-
-    bot.commands['hello'] = lambda bot, msg: 'Hello back'
-    
     bot.client = fudge.Fake('client').is_a_stub()
-    replies = []
     def send(msg):
         replies.append(msg)
     bot.client.send = send
+    return bot
+    
+def test_new_command_can_be_created():
+    replies = []
+    bot = fake_bot(replies)
+
+    bot.commands['hello'] = lambda bot, msg: 'Hello back'
     
     message = xmpp.Message('user@server', 'hello', frm='peer@server')
     bot.message_callback(None, message)
@@ -37,17 +40,11 @@ def test_new_command_can_be_created():
     assert replies[-1].getBody() == 'Hello back'
 
 def test_command_is_chosen_based_on_its_name():
-    bot = Bot('user@server', 'pass', log_path='/tmp/delme.log')
+    replies = []
+    bot = fake_bot(replies)
 
     bot.commands['hello'] = lambda bot, msg: 'Hello back'
     bot.commands['hi'] = lambda bot, msg: 'Hi back'
-    
-    bot.client = fudge.Fake('client').is_a_stub()
-    replies = []
-    def send(msg):
-        replies.append(msg)
-        
-    bot.client.send = send
     
     message = xmpp.Message('user@server', 'hello', frm='peer@server')
     bot.message_callback(None, message)
@@ -60,19 +57,16 @@ def test_command_is_chosen_based_on_its_name():
     assert replies[-1].getBody() == 'Hi back'
 
 def test_original_message_is_passed_as_parameter():
-    bot = Bot('user@server', 'pass', log_path='/tmp/delme.log')
+    replies = []
+    bot = fake_bot(replies)
 
     bot.commands['echo'] = lambda bot, msg: 'you said "%s"' % ','.join(msg)
-    
-    bot.client = fudge.Fake('client').is_a_stub()
-    replies = []
-    def send(msg):
-        replies.append(msg)
-        
-    bot.client.send = send
     
     message = xmpp.Message('user@server', 'echo hello world!', frm='peer@server')
     bot.message_callback(None, message)
 
     assert len(replies) == 1
     assert replies[-1].getBody() == 'you said "hello,world!"'
+
+#def test_stop():
+    
