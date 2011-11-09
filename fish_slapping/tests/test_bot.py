@@ -23,15 +23,6 @@ from fish_slapping import Log, Bot
 
 class BotTest(BaseTest):
 
-    class Status(object):
-        def __init__(self):
-            self.status = 'Ok'
-            self.status_show = ''
-        def get_status(self):
-            return self.status
-        def get_status_show(self):
-            return self.status_show
-
     def setUp(self):
         super(BotTest, self).setUp()
 
@@ -47,10 +38,8 @@ class BotTest(BaseTest):
         self.connect_patch.restore()
 
     def test_status_is_set_according_to_status_class(self):
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
         self.set_date('2011-09-21 01:00:03')
@@ -61,21 +50,19 @@ class BotTest(BaseTest):
         self.assertEquals(bot.status_show, '')
 
         # Status change should reflect in bot's status
-        status.status = 'Other status'
+        bot.status = lambda: ('', 'Other status')
         bot.cycle()
         self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Other status')
         self.assertEquals(bot.status_show, '')
-        status.status_show = 'away'
+        bot.status = lambda: ('away', 'Other status')
         bot.cycle()
         self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Other status')
         self.assertEquals(bot.status_show, 'away')
 
 
     def test_status_show_time_when_status_was_last_changed(self):
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
         self.set_date('2011-09-21 01:00:03')
@@ -87,8 +74,7 @@ class BotTest(BaseTest):
 
         # Status change should reflect in bot's status, with new time
         self.set_date('2011-09-21 01:00:04')
-        status.status = 'Other status'
-        status.status_show = 'away'
+        bot.status = lambda: ('away', 'Other status')
         bot.cycle()
         self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 Other status')
         self.assertEquals(bot.status_show, 'away')
@@ -101,17 +87,14 @@ class BotTest(BaseTest):
 
         # Status will be changed now
         self.set_date('2011-09-21 01:00:06')
-        status.status = 'New status'
-        status.status_show = 'away'
+        bot.status = lambda: ('away', 'New status')
         bot.cycle()
         self.assertEquals(bot.status_msg, '2011-09-21 01:00:06 New status')
         self.assertEquals(bot.status_show, 'away')
 
     def test_date_of_message_will_be_preserved_if_only_status_show_changes(self):
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
         self.set_date('2011-09-21 01:00:03')
@@ -123,19 +106,17 @@ class BotTest(BaseTest):
 
         # Status change should reflect in bot's status, with new time
         self.set_date('2011-09-21 01:00:04')
-        status.status_show = 'away'
+        bot.status = lambda: ('away', 'Ok')
         bot.cycle()
         self.assertEquals(bot.status_msg, '2011-09-21 01:00:03 Ok')
         self.assertEquals(bot.status_show, 'away')
 
 
     def test_error_will_override_status(self):
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
         bot.add_log(Log('/tmp/jabber_test/first.log', 'first'))
         bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd'))
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
         filename1 = '/tmp/jabber_test/first.log'
@@ -169,8 +150,7 @@ class BotTest(BaseTest):
 
         # Status update won't change bot status, because error is more important
         self.set_date('2011-09-21 01:00:06')
-        status.status = 'New status'
-        status.status_show = ''
+        bot.status = lambda: ('', 'New status')
         bot.cycle()
         self.assertEquals(bot.status_msg, '2011-09-21 01:00:04 first: Error 01')
         self.assertEquals(bot.status_show, 'dnd')
@@ -201,12 +181,10 @@ class BotTest(BaseTest):
         open(filename1, 'w').write('2011-09-21 01:00:01,854 - first - ERROR - Error 01\n')
         open(filename2, 'w').write('2011-09-21 01:00:02,854 - secnd - INFO - Line 02\n')
 
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
         bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
         bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd', error_timeout=60))
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
 
         bot.cycle()
@@ -224,12 +202,10 @@ class BotTest(BaseTest):
         open(filename1, 'w').write('2011-09-21 00:30:01,854 - first - ERROR - Error 01\n')
         open(filename2, 'w').write('2011-09-21 00:30:02,854 - secnd - INFO - Line 02\n')
 
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
         bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
         bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd', error_timeout=60))
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
         # Status should be 'Ok'
@@ -238,11 +214,9 @@ class BotTest(BaseTest):
         self.assertEquals(bot.status_show, '')
 
     def test_error_expires(self):
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
         bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=60))
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
         filename1 = '/tmp/jabber_test/first.log'
@@ -272,12 +246,10 @@ class BotTest(BaseTest):
 
 
     def test_status_can_be_cleared(self):
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass')
         bot.add_log(Log('/tmp/jabber_test/first.log', 'first'))
         bot.add_log(Log('/tmp/jabber_test/secnd.log', 'secnd'))
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         
         filename1 = '/tmp/jabber_test/first.log'
@@ -309,11 +281,9 @@ class BotTest(BaseTest):
         def message(*args):
             self.count += 1
 
-        status = self.Status()
-        
         bot = Bot('user@server', 'pass', presence_heartbeat=50)
         bot.add_log(Log('/tmp/jabber_test/first.log', 'first', error_timeout=30))
-        bot.status = status
+        bot.status = lambda: ('', 'Ok')
         bot.client = fudge.Fake('client').is_a_stub()
         bot.client.provides('send').calls(message)
         
@@ -331,7 +301,7 @@ class BotTest(BaseTest):
 
         # Status changes, one presence will be sent
         self.set_date('2011-09-21 01:00:03')
-        status.status = 'New status'
+        bot.status = lambda: ('', 'New status')
         bot.cycle()
         self.assertEquals(self.count, 2)
         bot.cycle()

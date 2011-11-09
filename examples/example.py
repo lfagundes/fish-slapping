@@ -19,7 +19,7 @@ class ApacheLog(Log):
                     "%a %b %d %H:%M:%S %Y")
             msg = line.split("]")[3]
 
-        return tstamp, msgtype, msg  
+        return tstamp, msgtype, msg
 
 class Uptime(object):
     def uptime(self):
@@ -28,19 +28,15 @@ class Uptime(object):
     def load(self):
         return float(self.uptime().split(':')[-1].split(',')[0].strip())
 
-    def get_status(self):
-        return self.uptime()
-
-    def get_status_show(self):
+    def __call__(self):
         load = self.load()
         if load > 4:
-            return 'dnd'
+            return 'dnd', self.uptime()
         if load > 2:
-            return 'away'
-        return ''
+            return 'away', self.uptime()
+        return '', self.uptime()
 
 if __name__ == "__main__":
-
     bot = Bot("user@domain.com", "secret_password")
     bot.status = Uptime()
     bot.add_log(ApacheLog("/var/log/apache2/error.log", "error"))

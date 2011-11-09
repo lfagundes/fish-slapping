@@ -284,6 +284,7 @@ class Bot(object):
         self.current_status = Status('')
         self.status_msg = ''
         self.status_show = ''
+        self.status = lambda: ('', '')
 
         self.last_presence = None
         self.last_presence_msg = ''
@@ -420,8 +421,8 @@ class Bot(object):
         self.cleared = datetime.datetime.now()
 
     def set_state(self):
-        status = Status(msg = self.status.get_status(),
-                        show = self.status.get_status_show())
+        show, msg = self.status()
+        status = Status(msg, show=show)
 
         if status.message != self.current_status.message:
             self.current_status = status
