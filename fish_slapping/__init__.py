@@ -271,14 +271,14 @@ class Bot(object):
         self.logger = self._get_logger(log_path, log_name)
         self.logs = {}
         self.sessions = {}
-        self.commands = {}
-
+        self._register_commands()
+        
         self.jid = jid
         self.password = password
 
         self.presence_heartbeat = presence_heartbeat
 
-        self.add_log(Log(log_path, error_timeout=log_error_timeout))
+        self.add_log(Log(log_path, name=log_name, error_timeout=log_error_timeout))
         
         self.current_status = Status('')
         self.status_msg = ''
@@ -292,6 +292,13 @@ class Bot(object):
         self.connected = False
         
         self.cleared = None
+
+    def _register_commands(self):
+        self.commands = {
+            'show': self.cmd_show,
+            'stop': self.cmd_stop,
+            }
+        
 
     def add_log(self, log):
         self.logs[log.name] = log
@@ -450,28 +457,8 @@ class Bot(object):
 
         message = message.split()
         
-        if message[0] == 'show':
-            target = message[1]
-            if len(message) > 2:
-                lines = int(message[2])
-            else:
-                lines = 5
-
-            if not self.logs.get(target):
-                self.client.send(xmpp.Message(sender_id, "Target %s unknown" % target))
-                self.logger.warn("Target %s unknown" % target)
-            else:
-                self.sessions[target].add(sender_id)
-                self.logs[target].rewind(lines=lines)
-            return
-
-        if message[0] == 'stop':
-            for session in self.sessions.values():
-                session.remove(sender_id)
-            self.client.send(xmpp.Message(sender_id, '--- fim dos logs'))
-            return
-
         if message[0] == 'uptime':
+            # TODO remove to plugin
             message = subprocess.Popen(['uptime'], stdout=subprocess.PIPE).stdout.read()
             self.client.send(xmpp.Message(sender_id, '\n' + message))
             return
@@ -492,11 +479,33 @@ class Bot(object):
 
         cmd = self.commands.get(message[0])
         if cmd:
-            response = cmd(self, message[1:])
-            self.client.send(xmpp.Message(sender_id, response))
+            response = cmd(sender_id, message[1:])
+            if response:
+                self.client.send(xmpp.Message(sender_id, response))
             return
 
         self.logger.warn("Unknown message")
+
+    def cmd_stop(self, sender_id, message):
+        for session in self.sessions.values():
+            session.remove(sender_id)
+        return '--- end of logs'
+
+    def cmd_show(self, sender_id, message):
+        target = message[0]
+        if len(message) > 1:
+            lines = int(message[1])
+        else:
+            lines = 5
+
+        if not self.logs.get(target):
+            self.client.send(xmpp.Message(sender_id, "Target %s unknown" % target))
+            self.logger.warn("Target %s unknown" % target)
+        else:
+            self.sessions[target].add(sender_id)
+            self.logs[target].rewind(lines=lines)
+
+        
 
 if __name__ == '__main__':
     Bot().run()

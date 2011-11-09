@@ -17,11 +17,14 @@
 #
 
 
-import xmpp, fudge
+import xmpp, fudge, os
 from fish_slapping import Bot
 
 def fake_bot(replies):
-    bot = Bot('user@server', 'pass', log_path='/tmp/delme.log')
+    tmp_log = '/tmp/fish-slapping-test-delme.log'
+    if os.path.exists(tmp_log):
+        os.remove(tmp_log)
+    bot = Bot('user@server', 'pass', log_path=tmp_log)
     bot.client = fudge.Fake('client').is_a_stub()
     def send(msg):
         replies.append(msg)
@@ -32,7 +35,7 @@ def test_new_command_can_be_created():
     replies = []
     bot = fake_bot(replies)
 
-    bot.commands['hello'] = lambda bot, msg: 'Hello back'
+    bot.commands['hello'] = lambda sender, msg: 'Hello back'
     
     message = xmpp.Message('user@server', 'hello', frm='peer@server')
     bot.message_callback(None, message)
@@ -43,8 +46,8 @@ def test_command_is_chosen_based_on_its_name():
     replies = []
     bot = fake_bot(replies)
 
-    bot.commands['hello'] = lambda bot, msg: 'Hello back'
-    bot.commands['hi'] = lambda bot, msg: 'Hi back'
+    bot.commands['hello'] = lambda sender, msg: 'Hello back'
+    bot.commands['hi'] = lambda sender, msg: 'Hi back'
     
     message = xmpp.Message('user@server', 'hello', frm='peer@server')
     bot.message_callback(None, message)
@@ -60,7 +63,7 @@ def test_original_message_is_passed_as_parameter():
     replies = []
     bot = fake_bot(replies)
 
-    bot.commands['echo'] = lambda bot, msg: 'you said "%s"' % ','.join(msg)
+    bot.commands['echo'] = lambda sender, msg: 'you said "%s"' % ','.join(msg)
     
     message = xmpp.Message('user@server', 'echo hello world!', frm='peer@server')
     bot.message_callback(None, message)
@@ -68,5 +71,49 @@ def test_original_message_is_passed_as_parameter():
     assert len(replies) == 1
     assert replies[-1].getBody() == 'you said "hello,world!"'
 
-#def test_stop():
+def test_sender_is_sent_as_parameter():
+    replies = []
+    bot = fake_bot(replies)
+
+    bot.commands['hello'] = lambda sender, msg: 'hello %s' % sender
+
+    message = xmpp.Message('user@server', 'hello', frm='peer@server')
+    bot.message_callback(None, message)
+
+    assert len(replies) == 1
+    assert replies[-1].getBody() == 'hello peer@server'                 
+
+def test_show_logs_and_stop():
+    replies = []
+    bot = fake_bot(replies)
+
+    bot.logger.info('Just a test message')
+
+    message = xmpp.Message('user@server', 'show fish-slapping', frm='peer@server')
+    bot.message_callback(None, message)
+    bot.flush_logs()
+    assert len(replies) == 1
+    assert 'Just a test message' in replies[-1].getBody()
+
+    bot.logger.info('Another test message')
+    bot.flush_logs()
+    assert len(replies) == 2
+    assert 'Another test message' in replies[-1].getBody()
+
+    bot.flush_logs()
+    assert len(replies) == 2
+
+    message = xmpp.Message('user@server', 'stop', frm='peer@server')
+    bot.message_callback(None, message)
+    assert len(replies) == 3
+    assert replies[-1].getBody() == '--- end of logs'
+
+    bot.logger.info('This is not supposed to be sent as msg')
+    bot.flush_logs()
+    assert len(replies) == 3
+    
+    
+
+    
+    
     
