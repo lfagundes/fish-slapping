@@ -20,20 +20,20 @@
 import xmpp, fudge, os
 from fish_slapping import Bot
 
-def fake_bot(replies):
+def fake_bot():
     tmp_log = '/tmp/fish-slapping-test-delme.log'
     if os.path.exists(tmp_log):
         os.remove(tmp_log)
     bot = Bot('user@server', 'pass', log_path=tmp_log)
     bot.client = fudge.Fake('client').is_a_stub()
+    replies = []
     def send(msg):
         replies.append(msg)
     bot.client.send = send
-    return bot
+    return bot, replies
     
 def test_new_command_can_be_created():
-    replies = []
-    bot = fake_bot(replies)
+    bot, replies = fake_bot()
 
     bot.commands['hello'] = lambda sender, msg: 'Hello back'
     
@@ -43,8 +43,7 @@ def test_new_command_can_be_created():
     assert replies[-1].getBody() == 'Hello back'
 
 def test_command_is_chosen_based_on_its_name():
-    replies = []
-    bot = fake_bot(replies)
+    bot, replies = fake_bot()
 
     bot.commands['hello'] = lambda sender, msg: 'Hello back'
     bot.commands['hi'] = lambda sender, msg: 'Hi back'
@@ -60,8 +59,7 @@ def test_command_is_chosen_based_on_its_name():
     assert replies[-1].getBody() == 'Hi back'
 
 def test_original_message_is_passed_as_parameter():
-    replies = []
-    bot = fake_bot(replies)
+    bot, replies = fake_bot()
 
     bot.commands['echo'] = lambda sender, msg: 'you said "%s"' % ','.join(msg)
     
@@ -72,8 +70,7 @@ def test_original_message_is_passed_as_parameter():
     assert replies[-1].getBody() == 'you said "hello,world!"'
 
 def test_sender_is_sent_as_parameter():
-    replies = []
-    bot = fake_bot(replies)
+    bot, replies = fake_bot()
 
     bot.commands['hello'] = lambda sender, msg: 'hello %s' % sender
 
@@ -84,8 +81,7 @@ def test_sender_is_sent_as_parameter():
     assert replies[-1].getBody() == 'hello peer@server'                 
 
 def test_show_logs_and_stop():
-    replies = []
-    bot = fake_bot(replies)
+    bot, replies = fake_bot()
 
     bot.logger.info('Just a test message')
 
@@ -120,8 +116,7 @@ def test_help():
         It is available through the help command
         """
 
-    replies = []
-    bot = fake_bot(replies)
+    bot, replies = fake_bot()
 
     bot.commands['test'] = my_command
 

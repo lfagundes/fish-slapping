@@ -271,6 +271,7 @@ class Bot(object):
         self.logger = self._get_logger(log_path, log_name)
         self.logs = {}
         self.sessions = {}
+        self.commands = {}
         self._register_commands()
         
         self.jid = jid
@@ -294,12 +295,10 @@ class Bot(object):
         self.cleared = None
 
     def _register_commands(self):
-        self.commands = {
-            'show': self.cmd_show,
-            'stop': self.cmd_stop,
-            'help': self.cmd_help,
-            }
-        
+        for method in dir(self):
+            if method.startswith('cmd_'):
+                name = method[4:]
+                self.commands[name] = self.__getattribute__(method)
 
     def add_log(self, log):
         self.logs[log.name] = log
@@ -383,6 +382,7 @@ class Bot(object):
             time.sleep(5)
 
     def public_ip(self):
+        # TODO move to plugin
         if not self.public_ip_address or time.time() - self.public_ip_check > 300:
             resp = urllib2.urlopen('http://automation.whatismyip.com/n09230945.asp')
             self.public_ip_address = resp.read()
@@ -458,22 +458,6 @@ class Bot(object):
 
         message = message.split()
         
-        if message[0] == 'uptime':
-            # TODO remove to plugin
-            message = subprocess.Popen(['uptime'], stdout=subprocess.PIPE).stdout.read()
-            self.client.send(xmpp.Message(sender_id, '\n' + message))
-            return
-            
-        if message[0] == 'ip':
-            # TODO remove to plugin
-            self.client.send(xmpp.Message(sender_id, self.public_ip()))
-            return
-
-        if message[0] == 'clear':
-            self.clear()
-            self.presence()
-            return
-        
         cmd = self.commands.get(message[0])
         if cmd:
             response = cmd(sender_id, message[1:])
@@ -482,11 +466,6 @@ class Bot(object):
             return
 
         self.logger.warn("Unknown message")
-
-    def cmd_stop(self, sender_id, message):
-        for session in self.sessions.values():
-            session.remove(sender_id)
-        return '--- end of logs'
 
     def cmd_show(self, sender_id, message):
         target = message[0]
@@ -502,6 +481,11 @@ class Bot(object):
             self.sessions[target].add(sender_id)
             self.logs[target].rewind(lines=lines)
 
+    def cmd_stop(self, sender_id, message):
+        for session in self.sessions.values():
+            session.remove(sender_id)
+        return '--- end of logs'
+
     def cmd_help(self, sender_id, message):
         help_text = []
         for command, function in sorted(self.commands.items(), key=lambda item: item[0]):
@@ -512,6 +496,19 @@ class Bot(object):
                 help_text.append('    %s' % line)
 
         return '\n'.join(help_text)
+
+    def cmd_clear(self, sender_id, message):
+        self.clear()
+        self.presence()
         
+    def cmd_uptime(self, sender_id, message):
+        # TODO move to plugin
+        message = subprocess.Popen(['uptime'], stdout=subprocess.PIPE).stdout.read()
+        self.client.send(xmpp.Message(sender_id, '\n' + message))
+
+    def cmd_ip(self, sender_id, message):
+        # TODO remove to plugin
+        self.client.send(xmpp.Message(sender_id, self.public_ip()))
+
 if __name__ == '__main__':
     Bot().run()
