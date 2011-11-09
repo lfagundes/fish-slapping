@@ -111,6 +111,27 @@ def test_show_logs_and_stop():
     bot.logger.info('This is not supposed to be sent as msg')
     bot.flush_logs()
     assert len(replies) == 3
+
+def test_help():
+
+    def my_command(sender, message):
+        """
+        This is the help text of my command.
+        It is available through the help command
+        """
+
+    replies = []
+    bot = fake_bot(replies)
+
+    bot.commands['test'] = my_command
+
+    message = xmpp.Message('user@server', 'help', frm='peer@server')
+    bot.message_callback(None, message)
+
+    assert len(replies) == 1
+    assert 'test\n    This is the help text of my command.\n    It is available' in replies[-1].getBody()
+    
+    
     
     
 

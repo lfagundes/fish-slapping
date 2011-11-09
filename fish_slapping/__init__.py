@@ -297,6 +297,7 @@ class Bot(object):
         self.commands = {
             'show': self.cmd_show,
             'stop': self.cmd_stop,
+            'help': self.cmd_help,
             }
         
 
@@ -473,10 +474,6 @@ class Bot(object):
             self.presence()
             return
         
-        if message[0] == 'help':
-            self.client.send(xmpp.Message(sender_id, HELP))
-            return
-
         cmd = self.commands.get(message[0])
         if cmd:
             response = cmd(sender_id, message[1:])
@@ -505,7 +502,16 @@ class Bot(object):
             self.sessions[target].add(sender_id)
             self.logs[target].rewind(lines=lines)
 
-        
+    def cmd_help(self, sender_id, message):
+        help_text = []
+        for command, function in sorted(self.commands.items(), key=lambda item: item[0]):
+            doc = function.__doc__ or 'No help available'
+            doc = '\n'.join([ line.strip() for line in doc.split('\n') if line.strip() ])
+            help_text.append(command)
+            for line in doc.split('\n'):
+                help_text.append('    %s' % line)
 
+        return '\n'.join(help_text)
+        
 if __name__ == '__main__':
     Bot().run()
