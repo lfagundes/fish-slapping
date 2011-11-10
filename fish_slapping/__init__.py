@@ -471,6 +471,12 @@ class Bot(object):
         self.logger.warn("Unknown message")
 
     def cmd_show(self, sender_id, message):
+        """
+        Show the last lines of the given log. Takes two parameters:
+          * log_name: the name of the Log
+          * number_of_lines: number of lines initially shown, default 5
+        After this commands, new lines in log will be continuously shown. Use "stop" to end.
+        """
         target = message[0]
         if len(message) > 1:
             lines = int(message[1])
@@ -485,12 +491,19 @@ class Bot(object):
             self.logs[target].rewind(lines=lines)
 
     def cmd_stop(self, sender_id, message):
+        """
+        Stop all log file streams.
+        """
         for log in self.logs.values():
             log.session.remove(sender_id)
         return '--- end of logs'
 
     def cmd_help(self, sender_id, message):
-        help_text = []
+        """
+        Shows list of commands and explanation of each one.
+        The explanation is taken from the function's __doc__ property.
+        """
+        help_text = ['']
         for command, function in sorted(self.commands.items(), key=lambda item: item[0]):
             doc = function.__doc__ or 'No help available'
             doc = '\n'.join([ line.strip() for line in doc.split('\n') if line.strip() ])
@@ -501,16 +514,20 @@ class Bot(object):
         return '\n'.join(help_text)
 
     def cmd_clear(self, sender_id, message):
+        """
+        Sets the status of the bot to its default status, in case it's been set by an error
+        message in any log. New error messages will set the status to DND again.
+        """
         self.clear()
         self.presence()
         
-    def cmd_uptime(self, sender_id, message):
-        # TODO move to plugin
+    def _cmd_uptime(self, sender_id, message):
+        # disabled. TODO move to plugin
         message = subprocess.Popen(['uptime'], stdout=subprocess.PIPE).stdout.read()
         self.client.send(xmpp.Message(sender_id, '\n' + message))
 
-    def cmd_ip(self, sender_id, message):
-        # TODO remove to plugin
+    def _cmd_ip(self, sender_id, message):
+        # disabled. TODO be move to plugin
         self.client.send(xmpp.Message(sender_id, self.public_ip()))
 
 if __name__ == '__main__':
