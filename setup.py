@@ -4,7 +4,7 @@ import os
 setup(name = 'fish_slapping',
       version = '0.1',
       description = 'Server monitoring with Jabber',
-      long_description = open(os.path.join(os.path.dirname(__file__), "README")).read(),
+      long_description = open(os.path.join(os.path.dirname(__file__), "README.rst")).read(),
       author = "Luis Fagundes",
       author_email = "lhfagundes@hacklab.com.br",
       license = "GPL3",
